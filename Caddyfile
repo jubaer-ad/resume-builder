@@ -8,5 +8,5 @@
         -Server
     }
 
-    reverse_proxy app:3000
+    reverse_proxy app:{$APP_PORT}
 }

@@ -62,6 +62,8 @@ nano .env
 
 Replace `resume.example.com` with the real domain. Start the stack:
 
+`PORT` controls the internal Next.js port. Compose passes the same value to Caddy automatically, so it normally does not need to be changed from `3000`.
+
 ```bash
 docker compose up -d --build
 docker compose ps
@@ -70,7 +72,7 @@ docker compose logs -f --tail=100
 
 Once DNS has reached the VPS, Caddy will obtain the TLS certificate and the application will be available at `https://your-domain.example`.
 
-Do not expose port 3000 in the VPS firewall. Only SSH, HTTP, and HTTPS are needed:
+Do not expose the configured application `PORT` in the VPS firewall. Only SSH, HTTP, and HTTPS are needed:
 
 ```bash
 sudo ufw allow OpenSSH
@@ -85,9 +87,8 @@ sudo ufw enable
 Run the export smoke test inside the application container:
 
 ```bash
-docker compose exec \
-  -e RESUME_BUILDER_URL=http://localhost:3000 \
-  app npm run smoke:exports
+docker compose exec app \
+  sh -c 'RESUME_BUILDER_URL=http://localhost:$PORT npm run smoke:exports'
 ```
 
 The command should report valid PDF and DOCX signatures.
