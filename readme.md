@@ -44,12 +44,11 @@ See [the MVP plan](docs/mvp-plan.md) for the product boundaries and future trigg
 
 ## Deploy to an Ubuntu VPS
 
-The production stack contains two containers:
+The production stack contains one container:
 
-- The standalone Next.js application, available only inside the Compose network
-- Caddy, which exposes ports 80/443 and automatically manages HTTPS
+- The standalone Next.js application, published only on the VPS loopback interface
 
-The VPS needs Docker Engine with the Compose plugin, a domain pointing to its public IP, and inbound ports 80 and 443 open.
+The VPS needs Docker Engine with the Compose plugin, an existing Caddy service, a domain pointing to its public IP, and inbound ports 80 and 443 open.
 
 ### First deployment
 
@@ -60,9 +59,7 @@ cp .env.example .env
 nano .env
 ```
 
-Replace `resume.example.com` with the real domain. Start the stack:
-
-`PORT` controls the internal Next.js port. Compose passes the same value to Caddy automatically, so it normally does not need to be changed from `3000`.
+Set `PORT` to the port Next.js should use. Compose publishes that port on `127.0.0.1` only, so it is reachable by Caddy on the VPS but not directly from the internet. Start the application:
 
 ```bash
 docker compose up -d --build
@@ -70,7 +67,22 @@ docker compose ps
 docker compose logs -f --tail=100
 ```
 
-Once DNS has reached the VPS, Caddy will obtain the TLS certificate and the application will be available at `https://your-domain.example`.
+Add a site block to the VPS's `/etc/caddy/Caddyfile`. Enter the same numeric port configured in `.env` manually; Caddy does not read the application's `.env` file:
+
+```caddy
+resume.example.com {
+    reverse_proxy 127.0.0.1:3000
+}
+```
+
+Replace the example domain and port, then validate and reload Caddy:
+
+```bash
+sudo caddy validate --config /etc/caddy/Caddyfile
+sudo systemctl reload caddy
+```
+
+Once DNS has reached the VPS, Caddy will obtain the TLS certificate and the application will be available at the configured HTTPS domain.
 
 Do not expose the configured application `PORT` in the VPS firewall. Only SSH, HTTP, and HTTPS are needed:
 
@@ -110,8 +122,8 @@ docker compose logs --tail=100
 # Restart the application
 docker compose restart app
 
-# Stop the stack without deleting HTTPS certificate data
+# Stop the application
 docker compose down
 ```
 
-Resume data is not stored on the VPS, so the application does not require a database or application-data backup. The named Caddy volumes preserve certificates and configuration between container replacements.
+Resume data is not stored on the VPS, so the application does not require a database or application-data backup. Caddy certificates and configuration remain managed by the VPS's system Caddy service.
