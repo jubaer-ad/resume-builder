@@ -29,10 +29,13 @@ const blankEducation = (): Education => ({
 export function ResumeBuilder() {
   const [resume, setResume] = useState<ResumeData>(emptyResume);
   const [step, setStep] = useState(0);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [generating, setGenerating] = useState<"pdf" | "docx" | "preview" | null>(null);
   const [message, setMessage] = useState("");
   const [previewUrl, setPreviewUrl] = useState("");
+  const mobileMenuButton = useRef<HTMLButtonElement>(null);
+  const mobileMenu = useRef<HTMLElement>(null);
 
   const template = useMemo(() => getTemplate(resume.templateId), [resume.templateId]);
 
@@ -59,6 +62,19 @@ export function ResumeBuilder() {
   useEffect(() => () => {
     if (previewUrl) URL.revokeObjectURL(previewUrl);
   }, [previewUrl]);
+
+  useEffect(() => {
+    if (!mobileMenuOpen) return;
+
+    mobileMenu.current?.querySelector<HTMLButtonElement>(".step-button.active")?.focus();
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key !== "Escape") return;
+      setMobileMenuOpen(false);
+      mobileMenuButton.current?.focus();
+    }
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [mobileMenuOpen]);
 
   function updateBasics(field: keyof ResumeData["basics"], value: string) {
     setResume((current) => ({ ...current, basics: { ...current.basics, [field]: value } }));
@@ -109,6 +125,12 @@ export function ResumeBuilder() {
     }
     setMessage("");
     setStep((current) => Math.min(steps.length - 1, current + 1));
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  function selectStep(index: number) {
+    setStep(index);
+    setMobileMenuOpen(false);
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
@@ -165,15 +187,52 @@ export function ResumeBuilder() {
   return (
     <main className="app-shell">
       <header className="topbar">
-        <button className="brand" onClick={() => setStep(0)} aria-label="Go to template selection">
+        <button className="brand" onClick={() => selectStep(0)} aria-label="Go to template selection">
           <span className="brand-mark">R</span>
           <span>Resumate</span>
         </button>
         <div className="topbar-actions">
           <span className="save-status">{loaded ? "Draft saved on this device" : "Loading draft…"}</span>
           <button className="text-button" onClick={resetDraft}>Start over</button>
+          <button
+            ref={mobileMenuButton}
+            type="button"
+            className="mobile-menu-button"
+            aria-expanded={mobileMenuOpen}
+            aria-controls="mobile-steps-menu"
+            aria-label={mobileMenuOpen ? "Close section navigation" : "Open section navigation"}
+            onClick={() => setMobileMenuOpen((open) => !open)}
+          >
+            <span aria-hidden="true" />
+            <span aria-hidden="true" />
+            <span aria-hidden="true" />
+          </button>
         </div>
       </header>
+
+      <div className={mobileMenuOpen ? "mobile-menu-layer open" : "mobile-menu-layer"}>
+        <button className="mobile-menu-backdrop" type="button" aria-label="Close section navigation" onClick={() => setMobileMenuOpen(false)} />
+        <nav ref={mobileMenu} id="mobile-steps-menu" className="mobile-steps-menu" aria-label="Resume sections">
+          <div className="mobile-menu-heading">
+            <p className="eyebrow">Your resume</p>
+            <span>Step {step + 1} of {steps.length}</span>
+          </div>
+          <ol className="steps-list">
+            {steps.map((item, index) => (
+              <li key={item.name}>
+                <button
+                  className={index === step ? "step-button active" : index < step ? "step-button complete" : "step-button"}
+                  onClick={() => selectStep(index)}
+                  aria-current={index === step ? "step" : undefined}
+                >
+                  <span className="step-number">{index < step ? "✓" : index + 1}</span>
+                  <span><strong>{item.name}</strong><small>{item.hint}</small></span>
+                </button>
+              </li>
+            ))}
+          </ol>
+        </nav>
+      </div>
 
       <div className="builder-layout">
         <aside className="steps-panel" aria-label="Resume steps">
@@ -183,7 +242,8 @@ export function ResumeBuilder() {
               <li key={item.name}>
                 <button
                   className={index === step ? "step-button active" : index < step ? "step-button complete" : "step-button"}
-                  onClick={() => setStep(index)}
+                  onClick={() => selectStep(index)}
+                  aria-current={index === step ? "step" : undefined}
                 >
                   <span className="step-number">{index < step ? "✓" : index + 1}</span>
                   <span><strong>{item.name}</strong><small>{item.hint}</small></span>
