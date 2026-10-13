@@ -34,6 +34,8 @@ Set `RESUME_BUILDER_URL` if the application is running somewhere other than `htt
 - Three visual resume styles, including photo and no-photo options
 - Repeatable work experience and education sections
 - Optional skills, projects, certifications, and languages
+- Selectable, reorderable sections plus positioned custom text sections
+- Rich-text formatting for multiline resume content in previews and exports
 - Browser-local text draft saving
 - PDF preview and PDF/DOCX downloads
 - Server-side schema validation and request-size limits

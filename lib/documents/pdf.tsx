@@ -1,6 +1,7 @@
 import React from "react";
 import { Document, Image, Link, Page, StyleSheet, Text, View, renderToBuffer } from "@react-pdf/renderer";
-import { ResumeData, lines, list } from "@/lib/resume";
+import { orderedSectionIds, ResumeData, sectionIsVisible } from "@/lib/resume";
+import { hasRichText, richTextBlocks } from "@/lib/rich-text";
 import { getTemplate } from "@/lib/templates";
 
 function ResumePdf({ resume }: { resume: ResumeData }) {
@@ -24,15 +25,38 @@ function ResumePdf({ resume }: { resume: ResumeData }) {
     organization: { color: "#46514d", fontFamily: "Helvetica-Oblique", marginBottom: 2 },
     bulletRow: { flexDirection: "row", marginBottom: 1.5, paddingLeft: 4 },
     bullet: { color: accent, marginRight: 5 },
-    skillRow: { flexDirection: "row", flexWrap: "wrap" },
-    skill: { backgroundColor: resume.templateId === "classic-ats" ? "#ffffff" : `${accent}12`, marginBottom: 4, marginRight: 5, paddingHorizontal: 6, paddingVertical: 3 },
   });
 
   const contact = [resume.basics.email, resume.basics.phone, resume.basics.location].filter(Boolean).join("  •  ");
   const photo = template.supportsPhoto && /^data:image\/(png|jpeg);base64,/.test(resume.basics.photoDataUrl) ? resume.basics.photoDataUrl : "";
 
   const Section = ({ title, children }: { title: string; children: React.ReactNode }) => <View style={styles.section}><Text style={styles.sectionTitle}>{title}</Text>{children}</View>;
-  const Bullets = ({ values }: { values: string[] }) => <>{values.map((value, index) => <View key={`${value}-${index}`} style={styles.bulletRow}><Text style={styles.bullet}>•</Text><Text>{value}</Text></View>)}</>;
+  const RichContent = ({ value }: { value: string }) => {
+    let orderedItem = 0;
+    return <>{richTextBlocks(value).map((block, index) => {
+    orderedItem = block.list === "number" ? orderedItem + 1 : 0;
+    const text = <Text style={{ flexGrow: block.list ? 1 : undefined, textAlign: block.alignment }}>{block.runs.map((run, runIndex) => <Text key={runIndex} style={{ fontFamily: run.bold && run.italic ? "Helvetica-BoldOblique" : run.bold ? "Helvetica-Bold" : run.italic ? "Helvetica-Oblique" : "Helvetica", textDecoration: run.underline ? "underline" : undefined }}>{run.text}</Text>)}</Text>;
+    return block.list ? <View key={index} style={styles.bulletRow}><Text style={styles.bullet}>{block.list === "number" ? `${orderedItem}.` : "•"}</Text>{text}</View> : <View key={index} style={{ marginBottom: 2 }}>{text}</View>;
+    })}</>;
+  };
+  const customSections = new Map(resume.customSections.map((section) => [section.id, section]));
+  const textSections: Record<string, [string, string]> = {
+    profile: ["Profile", resume.basics.summary],
+    skills: ["Skills", resume.skills],
+    projects: ["Projects", resume.projects],
+    certifications: ["Certifications", resume.certifications],
+    languages: ["Languages", resume.languages],
+  };
+
+  const renderSection = (id: string) => {
+    if (id === "experience" && resume.experience.length > 0) return <Section key={id} title="Experience">{resume.experience.map((entry) => <View key={entry.id} style={styles.entry} wrap={false}><View style={styles.entryHead}><Text style={styles.entryTitle}>{entry.position || "Untitled position"}</Text><Text style={styles.dates}>{[entry.startDate, entry.endDate].filter(Boolean).join(" – ")}</Text></View>{entry.employer && <Text style={styles.organization}>{entry.employer}</Text>}<RichContent value={entry.highlights} /></View>)}</Section>;
+    if (id === "education" && resume.education.length > 0) return <Section key={id} title="Education">{resume.education.map((entry) => <View key={entry.id} style={styles.entry} wrap={false}><View style={styles.entryHead}><Text style={styles.entryTitle}>{entry.qualification || "Qualification"}</Text><Text style={styles.dates}>{[entry.startDate, entry.endDate].filter(Boolean).join(" – ")}</Text></View>{entry.institution && <Text style={styles.organization}>{entry.institution}</Text>}<RichContent value={entry.details} /></View>)}</Section>;
+    const standard = textSections[id];
+    if (standard && hasRichText(standard[1])) return <Section key={id} title={standard[0]}><RichContent value={standard[1]} /></Section>;
+    const custom = customSections.get(id);
+    if (custom && custom.title && hasRichText(custom.content)) return <Section key={id} title={custom.title}><RichContent value={custom.content} /></Section>;
+    return null;
+  };
 
   return (
     <Document title={`${resume.basics.fullName} Resume`} author={resume.basics.fullName}>
@@ -49,13 +73,7 @@ function ResumePdf({ resume }: { resume: ResumeData }) {
           </View>
         </View>
 
-        {resume.basics.summary && <Section title="Profile"><Text>{resume.basics.summary}</Text></Section>}
-        {resume.experience.length > 0 && <Section title="Experience">{resume.experience.map((entry) => <View key={entry.id} style={styles.entry} wrap={false}><View style={styles.entryHead}><Text style={styles.entryTitle}>{entry.position || "Untitled position"}</Text><Text style={styles.dates}>{[entry.startDate, entry.endDate].filter(Boolean).join(" – ")}</Text></View>{entry.employer && <Text style={styles.organization}>{entry.employer}</Text>}<Bullets values={lines(entry.highlights)} /></View>)}</Section>}
-        {resume.education.length > 0 && <Section title="Education">{resume.education.map((entry) => <View key={entry.id} style={styles.entry} wrap={false}><View style={styles.entryHead}><Text style={styles.entryTitle}>{entry.qualification || "Qualification"}</Text><Text style={styles.dates}>{[entry.startDate, entry.endDate].filter(Boolean).join(" – ")}</Text></View>{entry.institution && <Text style={styles.organization}>{entry.institution}</Text>}{entry.details && <Text>{entry.details}</Text>}</View>)}</Section>}
-        {list(resume.skills).length > 0 && <Section title="Skills"><View style={styles.skillRow}>{list(resume.skills).map((skill) => <Text key={skill} style={styles.skill}>{skill}</Text>)}</View></Section>}
-        {lines(resume.projects).length > 0 && <Section title="Projects"><Bullets values={lines(resume.projects)} /></Section>}
-        {lines(resume.certifications).length > 0 && <Section title="Certifications"><Bullets values={lines(resume.certifications)} /></Section>}
-        {lines(resume.languages).length > 0 && <Section title="Languages"><Text>{lines(resume.languages).join("  •  ")}</Text></Section>}
+        {orderedSectionIds(resume).filter((id) => sectionIsVisible(resume, id)).map(renderSection)}
       </Page>
     </Document>
   );

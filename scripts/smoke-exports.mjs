@@ -9,7 +9,7 @@ const resume = {
     phone: "+880 1700 000000",
     location: "Dhaka, Bangladesh",
     link: "linkedin.com/in/amina",
-    summary: "Friendly and reliable graduate with strong communication and organization skills.",
+    summary: "<p><strong>Friendly and reliable</strong> graduate with strong communication and organization skills.</p>",
     photoDataUrl: "",
   },
   experience: [{
@@ -18,7 +18,7 @@ const resume = {
     position: "Sales Assistant",
     startDate: "Jan 2025",
     endDate: "Present",
-    highlights: "Helped customers find suitable products\nMaintained accurate sales records",
+    highlights: "<ul><li>Helped customers find suitable products</li><li><strong>Maintained</strong> accurate sales records</li></ul>",
   }],
   education: [{
     id: "edu1",
@@ -32,6 +32,13 @@ const resume = {
   projects: "Created a student budget tracker",
   certifications: "Digital Marketing Basics, 2025",
   languages: "Bangla — Native\nEnglish — Professional",
+  sectionOrder: ["profile", "skills", "experience", "education", "custom-community", "projects", "certifications", "languages"],
+  hiddenSections: ["certifications"],
+  customSections: [{
+    id: "custom-community",
+    title: "Community work",
+    content: '<p style="text-align:center"><em>Volunteer organizer</em></p>',
+  }],
 };
 
 const expectedSignatures = { pdf: "25504446", docx: "504b0304" };

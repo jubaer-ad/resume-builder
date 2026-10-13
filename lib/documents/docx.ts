@@ -12,8 +12,10 @@ import {
   TabStopPosition,
   TabStopType,
   TextRun,
+  UnderlineType,
 } from "docx";
-import { ResumeData, lines, list } from "@/lib/resume";
+import { orderedSectionIds, ResumeData, sectionIsVisible } from "@/lib/resume";
+import { hasRichText, richTextBlocks } from "@/lib/rich-text";
 import { getTemplate } from "@/lib/templates";
 
 const twip = (value: number) => value;
@@ -46,12 +48,24 @@ function entryTitle(title: string, dates: string) {
   });
 }
 
-function bullet(text: string) {
-  return new Paragraph({
-    text,
-    bullet: { level: 0 },
-    spacing: { after: 35 },
-    style: "ResumeBody",
+function richParagraphs(value: string): Paragraph[] {
+  let orderedItem = 0;
+  return richTextBlocks(value).map((block) => {
+    orderedItem = block.list === "number" ? orderedItem + 1 : 0;
+    const runs = block.runs.map((run) => new TextRun({
+        text: run.text,
+        bold: run.bold,
+        italics: run.italic,
+        underline: run.underline ? { type: UnderlineType.SINGLE } : undefined,
+      }));
+    if (block.list === "number") runs.unshift(new TextRun({ text: `${orderedItem}. `, bold: true }));
+    return new Paragraph({
+      alignment: block.alignment === "center" ? AlignmentType.CENTER : block.alignment === "right" ? AlignmentType.RIGHT : AlignmentType.LEFT,
+      bullet: block.list === "bullet" ? { level: 0 } : undefined,
+      spacing: { after: 45 },
+      style: "ResumeBody",
+      children: runs,
+    });
   });
 }
 
@@ -108,39 +122,42 @@ export async function createDocx(resume: ResumeData): Promise<Uint8Array> {
     }));
   }
 
-  if (resume.basics.summary) {
-    children.push(heading("Profile", accent));
-    children.push(new Paragraph({ text: resume.basics.summary, style: "ResumeBody", spacing: { after: 70 } }));
-  }
+  const textSections: Record<string, [string, string]> = {
+    profile: ["Profile", resume.basics.summary],
+    skills: ["Skills", resume.skills],
+    projects: ["Projects", resume.projects],
+    certifications: ["Certifications", resume.certifications],
+    languages: ["Languages", resume.languages],
+  };
+  const customSections = new Map(resume.customSections.map((section) => [section.id, section]));
 
-  if (resume.experience.length) {
-    children.push(heading("Experience", accent));
-    for (const entry of resume.experience) {
-      children.push(entryTitle(entry.position, dateRange(entry.startDate, entry.endDate)));
-      if (entry.employer) children.push(new Paragraph({ children: [new TextRun({ text: entry.employer, italics: true, color: "46514D", size: 20 })], spacing: { after: 45 } }));
-      children.push(...lines(entry.highlights).map(bullet));
+  for (const id of orderedSectionIds(resume)) {
+    if (!sectionIsVisible(resume, id)) continue;
+    if (id === "experience" && resume.experience.length) {
+      children.push(heading("Experience", accent));
+      for (const entry of resume.experience) {
+        children.push(entryTitle(entry.position, dateRange(entry.startDate, entry.endDate)));
+        if (entry.employer) children.push(new Paragraph({ children: [new TextRun({ text: entry.employer, italics: true, color: "46514D", size: 20 })], spacing: { after: 45 } }));
+        children.push(...richParagraphs(entry.highlights));
+      }
+      continue;
     }
-  }
-
-  if (resume.education.length) {
-    children.push(heading("Education", accent));
-    for (const entry of resume.education) {
-      children.push(entryTitle(entry.qualification, dateRange(entry.startDate, entry.endDate)));
-      if (entry.institution) children.push(new Paragraph({ children: [new TextRun({ text: entry.institution, italics: true, color: "46514D", size: 20 })], spacing: { after: 35 } }));
-      if (entry.details) children.push(new Paragraph({ text: entry.details, style: "ResumeBody", spacing: { after: 55 } }));
+    if (id === "education" && resume.education.length) {
+      children.push(heading("Education", accent));
+      for (const entry of resume.education) {
+        children.push(entryTitle(entry.qualification, dateRange(entry.startDate, entry.endDate)));
+        if (entry.institution) children.push(new Paragraph({ children: [new TextRun({ text: entry.institution, italics: true, color: "46514D", size: 20 })], spacing: { after: 35 } }));
+        children.push(...richParagraphs(entry.details));
+      }
+      continue;
     }
-  }
-
-  if (list(resume.skills).length) {
-    children.push(heading("Skills", accent));
-    children.push(new Paragraph({ text: list(resume.skills).join("  •  "), style: "ResumeBody" }));
-  }
-
-  for (const [title, value] of [["Projects", resume.projects], ["Certifications", resume.certifications], ["Languages", resume.languages]] as const) {
-    const items = lines(value);
-    if (!items.length) continue;
-    children.push(heading(title, accent));
-    children.push(...items.map((item) => title === "Languages" ? new Paragraph({ text: item, style: "ResumeBody" }) : bullet(item)));
+    const standard = textSections[id];
+    if (standard && hasRichText(standard[1])) {
+      children.push(heading(standard[0], accent), ...richParagraphs(standard[1]));
+      continue;
+    }
+    const custom = customSections.get(id);
+    if (custom && custom.title && hasRichText(custom.content)) children.push(heading(custom.title, accent), ...richParagraphs(custom.content));
   }
 
   const document = new Document({

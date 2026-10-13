@@ -1,7 +1,8 @@
 "use client";
 
-import { ChangeEvent, useEffect, useMemo, useState } from "react";
-import { Education, emptyResume, Experience, ResumeData, list, lines } from "@/lib/resume";
+import { ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
+import { CustomSection, Education, emptyResume, Experience, orderedSectionIds, ResumeData, sectionIsVisible } from "@/lib/resume";
+import { hasRichText, richTextBlocks, sanitizeRichText } from "@/lib/rich-text";
 import { getTemplate, templates } from "@/lib/templates";
 
 const DRAFT_KEY = "resumate-draft-v1";
@@ -259,6 +260,64 @@ function Field({ label, hint, children }: { label: string; hint?: string; childr
   return <label className="field"><span>{label}</span>{children}{hint && <small>{hint}</small>}</label>;
 }
 
+function RichTextEditor({ value, onChange, placeholder, rows = 4, label }: { value: string; onChange: (value: string) => void; placeholder?: string; rows?: number; label: string }) {
+  const editor = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!editor.current || document.activeElement === editor.current) return;
+    const safeValue = sanitizeRichText(value);
+    if (editor.current.innerHTML !== safeValue) editor.current.innerHTML = safeValue;
+  }, [value]);
+
+  const update = () => {
+    if (editor.current) onChange(sanitizeRichText(editor.current.innerHTML));
+  };
+
+  const format = (command: string) => {
+    editor.current?.focus();
+    document.execCommand(command, false);
+    update();
+  };
+
+  return (
+    <div className="rich-editor">
+      <div className="format-toolbar" role="toolbar" aria-label={`Format ${label}`}>
+        <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => format("bold")} aria-label="Bold"><strong>B</strong></button>
+        <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => format("italic")} aria-label="Italic"><em>I</em></button>
+        <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => format("underline")} aria-label="Underline"><u>U</u></button>
+        <span />
+        <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => format("insertUnorderedList")} aria-label="Bullet list">• List</button>
+        <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => format("insertOrderedList")} aria-label="Numbered list">1. List</button>
+        <span />
+        <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => format("justifyLeft")} aria-label="Align left">≡</button>
+        <button type="button" className="align-center" onMouseDown={(event) => event.preventDefault()} onClick={() => format("justifyCenter")} aria-label="Align center">≡</button>
+        <button type="button" className="align-right" onMouseDown={(event) => event.preventDefault()} onClick={() => format("justifyRight")} aria-label="Align right">≡</button>
+      </div>
+      <div
+        ref={editor}
+        className="rich-input"
+        contentEditable
+        suppressContentEditableWarning
+        role="textbox"
+        aria-label={label}
+        aria-multiline="true"
+        data-placeholder={placeholder}
+        style={{ minHeight: `${rows * 1.55 + 1.5}em` }}
+        onInput={update}
+        onBlur={() => {
+          update();
+          if (editor.current) editor.current.innerHTML = sanitizeRichText(editor.current.innerHTML);
+        }}
+        onPaste={(event) => {
+          event.preventDefault();
+          document.execCommand("insertText", false, event.clipboardData.getData("text/plain"));
+          update();
+        }}
+      />
+    </div>
+  );
+}
+
 function TemplateStep({ resume, setResume }: { resume: ResumeData; setResume: React.Dispatch<React.SetStateAction<ResumeData>> }) {
   return (
     <div>
@@ -296,7 +355,7 @@ function BasicsStep({ resume, update, onPhoto }: { resume: ResumeData; update: (
         <Field label="LinkedIn or portfolio"><input value={resume.basics.link} onChange={(e) => update("link", e.target.value)} placeholder="linkedin.com/in/your-name" /></Field>
       </div>
       <Field label="Professional summary" hint="Write 2–4 short sentences. Freshers can describe their strengths, education, and the kind of opportunity they want.">
-        <textarea rows={5} value={resume.basics.summary} onChange={(e) => update("summary", e.target.value)} placeholder="Motivated business graduate with strong communication skills…" />
+        <RichTextEditor rows={5} label="Professional summary" value={resume.basics.summary} onChange={(value) => update("summary", value)} placeholder="Motivated business graduate with strong communication skills…" />
       </Field>
       {supportsPhoto && (
         <div className="photo-field">
@@ -322,7 +381,7 @@ function ExperienceStep({ entries, add, update, remove, move }: { entries: Exper
             <Field label="Start date"><input value={entry.startDate} onChange={(e) => update(entry.id, "startDate", e.target.value)} placeholder="Jan 2024" /></Field>
             <Field label="End date"><input value={entry.endDate} onChange={(e) => update(entry.id, "endDate", e.target.value)} placeholder="Present" /></Field>
           </div>
-          <Field label="Achievements and responsibilities" hint="Put each point on a new line. Start with an action word where possible."><textarea rows={5} value={entry.highlights} onChange={(e) => update(entry.id, "highlights", e.target.value)} placeholder={"Helped 40+ customers each day\nMaintained accurate sales records"} /></Field>
+          <Field label="Achievements and responsibilities" hint="Use the toolbar to emphasize text, create lists, or change alignment."><RichTextEditor rows={5} label={`Achievements for ${entry.position || `experience ${index + 1}`}`} value={entry.highlights} onChange={(value) => update(entry.id, "highlights", value)} placeholder={"Helped 40+ customers each day\nMaintained accurate sales records"} /></Field>
         </EntryCard>
       ))}
       {entries.length > 0 && <button className="add-button" onClick={add}>+ Add another experience</button>}
@@ -343,7 +402,7 @@ function EducationStep({ entries, add, update, remove, move }: { entries: Educat
             <Field label="Start date"><input value={entry.startDate} onChange={(e) => update(entry.id, "startDate", e.target.value)} placeholder="2020" /></Field>
             <Field label="End date"><input value={entry.endDate} onChange={(e) => update(entry.id, "endDate", e.target.value)} placeholder="2024 or Expected 2027" /></Field>
           </div>
-          <Field label="Details" hint="Optional: result, specialization, relevant subjects, or activities."><textarea rows={3} value={entry.details} onChange={(e) => update(entry.id, "details", e.target.value)} /></Field>
+          <Field label="Details" hint="Optional: result, specialization, relevant subjects, or activities."><RichTextEditor rows={3} label={`Education details for ${entry.qualification || `education ${index + 1}`}`} value={entry.details} onChange={(value) => update(entry.id, "details", value)} /></Field>
         </EntryCard>
       ))}
       {entries.length > 0 && <button className="add-button" onClick={add}>+ Add another education</button>}
@@ -365,15 +424,98 @@ function EmptyState({ icon, title, copy, action, onAction }: { icon: string; tit
 }
 
 function MoreStep({ resume, setResume }: { resume: ResumeData; setResume: React.Dispatch<React.SetStateAction<ResumeData>> }) {
+  const [newTitle, setNewTitle] = useState("");
+  const [newPosition, setNewPosition] = useState("end");
   const update = (field: "skills" | "projects" | "certifications" | "languages", value: string) => setResume((current) => ({ ...current, [field]: value }));
+  const ordered = orderedSectionIds(resume);
+  const labels: Record<string, string> = {
+    profile: "Profile",
+    experience: "Experience",
+    education: "Education",
+    skills: "Skills",
+    projects: "Projects",
+    certifications: "Certifications",
+    languages: "Languages",
+  };
+  for (const section of resume.customSections) labels[section.id] = section.title || "Untitled section";
+
+  const toggleSection = (id: string) => setResume((current) => ({
+    ...current,
+    hiddenSections: current.hiddenSections.includes(id)
+      ? current.hiddenSections.filter((sectionId) => sectionId !== id)
+      : [...current.hiddenSections, id],
+  }));
+
+  const moveSection = (index: number, direction: -1 | 1) => setResume((current) => {
+    const values = orderedSectionIds(current);
+    const target = index + direction;
+    if (target < 0 || target >= values.length) return current;
+    [values[index], values[target]] = [values[target], values[index]];
+    return { ...current, sectionOrder: values };
+  });
+
+  const addCustomSection = () => {
+    const title = newTitle.trim();
+    if (!title || resume.customSections.length >= 8) return;
+    const section: CustomSection = { id: `custom-${makeId()}`, title, content: "" };
+    setResume((current) => {
+      const order = orderedSectionIds(current);
+      const index = newPosition === "start" ? 0 : newPosition === "end" ? order.length : Math.max(0, order.indexOf(newPosition) + 1);
+      order.splice(index, 0, section.id);
+      return { ...current, customSections: [...current.customSections, section], sectionOrder: order };
+    });
+    setNewTitle("");
+    setNewPosition("end");
+  };
+
+  const updateCustom = (id: string, changes: Partial<Pick<CustomSection, "title" | "content">>) => setResume((current) => ({
+    ...current,
+    customSections: current.customSections.map((section) => section.id === id ? { ...section, ...changes } : section),
+  }));
+
+  const removeCustom = (id: string) => setResume((current) => ({
+    ...current,
+    customSections: current.customSections.filter((section) => section.id !== id),
+    sectionOrder: current.sectionOrder.filter((sectionId) => sectionId !== id),
+    hiddenSections: current.hiddenSections.filter((sectionId) => sectionId !== id),
+  }));
+
   return (
     <div>
-      <SectionHeading eyebrow="Skills and more" title="Add what makes you stand out" copy="Everything here is optional. Only completed sections appear in your resume." />
+      <SectionHeading eyebrow="Sections and content" title="Build the resume you need" copy="Choose which sections to include, arrange them, and add your own text sections." />
+      <section className="section-manager" aria-labelledby="section-manager-title">
+        <div className="manager-heading"><div><h2 id="section-manager-title">Resume sections</h2><p>Unchecked sections stay saved but will not appear in previews or downloads.</p></div></div>
+        <div className="section-order-list">
+          {ordered.map((id, index) => (
+            <div className="section-order-row" key={id}>
+              <label><input type="checkbox" checked={sectionIsVisible(resume, id)} onChange={() => toggleSection(id)} /><span>{labels[id]}</span>{id.startsWith("custom-") && <small>Custom</small>}</label>
+              <div><button type="button" onClick={() => moveSection(index, -1)} disabled={index === 0} aria-label={`Move ${labels[id]} up`}>↑</button><button type="button" onClick={() => moveSection(index, 1)} disabled={index === ordered.length - 1} aria-label={`Move ${labels[id]} down`}>↓</button></div>
+            </div>
+          ))}
+        </div>
+        <div className="add-section-form">
+          <Field label="New section title"><input value={newTitle} maxLength={100} onChange={(event) => setNewTitle(event.target.value)} placeholder="e.g. Volunteer work" /></Field>
+          <Field label="Position">
+            <select value={newPosition} onChange={(event) => setNewPosition(event.target.value)}>
+              <option value="start">At the beginning</option>
+              {ordered.map((id) => <option value={id} key={id}>After {labels[id]}</option>)}
+              <option value="end">At the end</option>
+            </select>
+          </Field>
+          <button type="button" className="button secondary" onClick={addCustomSection} disabled={!newTitle.trim() || resume.customSections.length >= 8}>Add section</button>
+        </div>
+      </section>
       <div className="stacked-fields">
-        <Field label="Skills" hint="Separate skills with commas or new lines."><textarea rows={3} value={resume.skills} onChange={(e) => update("skills", e.target.value)} placeholder="Customer service, Microsoft Excel, Communication" /></Field>
-        <Field label="Projects" hint="Put each project on a new line. This is especially useful for freshers."><textarea rows={4} value={resume.projects} onChange={(e) => update("projects", e.target.value)} placeholder="Student budget tracker — Built a spreadsheet to…" /></Field>
-        <Field label="Certifications"><textarea rows={3} value={resume.certifications} onChange={(e) => update("certifications", e.target.value)} placeholder="Google Digital Marketing Certificate, 2025" /></Field>
-        <Field label="Languages"><textarea rows={3} value={resume.languages} onChange={(e) => update("languages", e.target.value)} placeholder="Bangla — Native, English — Professional" /></Field>
+        <Field label="Skills"><RichTextEditor rows={3} label="Skills" value={resume.skills} onChange={(value) => update("skills", value)} placeholder="Customer service, Microsoft Excel, Communication" /></Field>
+        <Field label="Projects"><RichTextEditor rows={4} label="Projects" value={resume.projects} onChange={(value) => update("projects", value)} placeholder="Student budget tracker — Built a spreadsheet to…" /></Field>
+        <Field label="Certifications"><RichTextEditor rows={3} label="Certifications" value={resume.certifications} onChange={(value) => update("certifications", value)} placeholder="Google Digital Marketing Certificate, 2025" /></Field>
+        <Field label="Languages"><RichTextEditor rows={3} label="Languages" value={resume.languages} onChange={(value) => update("languages", value)} placeholder="Bangla — Native, English — Professional" /></Field>
+        {resume.customSections.map((section) => (
+          <article className="custom-section-card" key={section.id}>
+            <header><input aria-label="Custom section title" value={section.title} maxLength={100} onChange={(event) => updateCustom(section.id, { title: event.target.value })} /><button type="button" className="text-button" onClick={() => removeCustom(section.id)}>Remove</button></header>
+            <RichTextEditor rows={5} label={`${section.title} content`} value={section.content} onChange={(content) => updateCustom(section.id, { content })} placeholder={`Add content for ${section.title}…`} />
+          </article>
+        ))}
       </div>
     </div>
   );
@@ -401,6 +543,25 @@ function ReviewStep({ resume, previewUrl, generating, generate }: { resume: Resu
 function ResumePreview({ resume }: { resume: ResumeData }) {
   const theme = getTemplate(resume.templateId);
   const contacts = [resume.basics.email, resume.basics.phone, resume.basics.location, resume.basics.link].filter(Boolean);
+  const sections = orderedSectionIds(resume).filter((id) => sectionIsVisible(resume, id));
+  const customSections = new Map(resume.customSections.map((section) => [section.id, section]));
+
+  const renderSection = (id: string) => {
+    if (id === "profile" && hasRichText(resume.basics.summary)) return <PreviewSection key={id} title="Profile"><RichTextContent value={resume.basics.summary} /></PreviewSection>;
+    if (id === "experience" && resume.experience.length > 0) return <PreviewSection key={id} title="Experience">{resume.experience.map((entry) => <div className="resume-entry" key={entry.id}><h4>{entry.position || "Position"}</h4><strong>{entry.employer}</strong><em>{[entry.startDate, entry.endDate].filter(Boolean).join(" – ")}</em>{hasRichText(entry.highlights) && <RichTextContent value={entry.highlights} />}</div>)}</PreviewSection>;
+    if (id === "education" && resume.education.length > 0) return <PreviewSection key={id} title="Education">{resume.education.map((entry) => <div className="resume-entry" key={entry.id}><h4>{entry.qualification || "Qualification"}</h4><strong>{entry.institution}</strong><em>{[entry.startDate, entry.endDate].filter(Boolean).join(" – ")}</em>{hasRichText(entry.details) && <RichTextContent value={entry.details} />}</div>)}</PreviewSection>;
+    const textSections: Record<string, [string, string]> = {
+      skills: ["Skills", resume.skills],
+      projects: ["Projects", resume.projects],
+      certifications: ["Certifications", resume.certifications],
+      languages: ["Languages", resume.languages],
+    };
+    if (textSections[id] && hasRichText(textSections[id][1])) return <PreviewSection key={id} title={textSections[id][0]}><RichTextContent value={textSections[id][1]} /></PreviewSection>;
+    const custom = customSections.get(id);
+    if (custom && custom.title.trim() && hasRichText(custom.content)) return <PreviewSection key={id} title={custom.title}><RichTextContent value={custom.content} /></PreviewSection>;
+    return null;
+  };
+
   return (
     <div className={`resume-paper ${resume.templateId}`} style={{ "--resume-accent": theme.accent } as React.CSSProperties}>
       <header className="resume-header">
@@ -408,16 +569,22 @@ function ResumePreview({ resume }: { resume: ResumeData }) {
         <div><h2>{resume.basics.fullName || "Your Name"}</h2><h3>{resume.basics.headline || "Your professional title"}</h3><p>{contacts.join("  •  ")}</p></div>
       </header>
       <div className="resume-body">
-        {resume.basics.summary && <PreviewSection title="Profile"><p>{resume.basics.summary}</p></PreviewSection>}
-        {resume.experience.length > 0 && <PreviewSection title="Experience">{resume.experience.map((entry) => <div className="resume-entry" key={entry.id}><h4>{entry.position || "Position"}</h4><strong>{entry.employer}</strong><em>{[entry.startDate, entry.endDate].filter(Boolean).join(" – ")}</em>{lines(entry.highlights).length > 0 && <ul>{lines(entry.highlights).map((line) => <li key={line}>{line}</li>)}</ul>}</div>)}</PreviewSection>}
-        {resume.education.length > 0 && <PreviewSection title="Education">{resume.education.map((entry) => <div className="resume-entry" key={entry.id}><h4>{entry.qualification || "Qualification"}</h4><strong>{entry.institution}</strong><em>{[entry.startDate, entry.endDate].filter(Boolean).join(" – ")}</em>{entry.details && <p>{entry.details}</p>}</div>)}</PreviewSection>}
-        {list(resume.skills).length > 0 && <PreviewSection title="Skills"><div className="skill-list">{list(resume.skills).map((skill) => <span key={skill}>{skill}</span>)}</div></PreviewSection>}
-        {lines(resume.projects).length > 0 && <PreviewSection title="Projects"><ul>{lines(resume.projects).map((item) => <li key={item}>{item}</li>)}</ul></PreviewSection>}
-        {lines(resume.certifications).length > 0 && <PreviewSection title="Certifications"><ul>{lines(resume.certifications).map((item) => <li key={item}>{item}</li>)}</ul></PreviewSection>}
-        {lines(resume.languages).length > 0 && <PreviewSection title="Languages"><p>{lines(resume.languages).join(" • ")}</p></PreviewSection>}
+        {sections.map(renderSection)}
       </div>
     </div>
   );
+}
+
+function RichTextContent({ value }: { value: string }) {
+  let orderedItem = 0;
+  return <div className="rich-content">{richTextBlocks(value).map((block, index) => {
+    const content = block.runs.map((run, runIndex) => <span key={runIndex} style={{ fontWeight: run.bold ? 700 : undefined, fontStyle: run.italic ? "italic" : undefined, textDecoration: run.underline ? "underline" : undefined }}>{run.text}</span>);
+    const style = { textAlign: block.alignment } as React.CSSProperties;
+    orderedItem = block.list === "number" ? orderedItem + 1 : 0;
+    if (block.list === "bullet") return <ul key={index} style={style}><li>{content}</li></ul>;
+    if (block.list === "number") return <ol key={index} start={orderedItem} style={style}><li>{content}</li></ol>;
+    return <p key={index} style={style}>{content}</p>;
+  })}</div>;
 }
 
 function PreviewSection({ title, children }: { title: string; children: React.ReactNode }) {
